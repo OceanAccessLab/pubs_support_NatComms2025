@@ -4,9 +4,9 @@ Script to generate Appendix Figures of the Climate fisheries paper
 
 This script generates the "ecosystem_data.csv" data file.
 
-This code is static and not updated since re-submission 1
+This code is static and not updated since re-submission 2
 Frederic.Cyr@mi.mun.ca
-2024-12-12
+2025-01-17
 '''
 
 import matplotlib.pyplot as plt
@@ -41,19 +41,45 @@ years_colors = [
 ['red'],
 ['green']]
 
-# Define statistical model
-def simple_regplot(
-    x, y, n_std=2, n_pts=100, ax=None, scatter_kws=None, line_kws=None, ci_kws=None
-):
-    """ Draw a regression line with error interval. """
-    ax = plt.gca() if ax is None else ax
+# Define a bootstrap model for linear regression
+def lreg_bootstrap(x, y, nboot=1000, ci=95):
+    # initialize empty dict
+    summary = {}
 
-    # calculate best-fit line and interval
+    # find index of CI bounds
+    idx1 = int(np.round(nboot*((100-ci)/2)/100))
+    idx2 = int(np.round(nboot*(100-(100-ci)/2)/100))
+    idxm = int(np.round(nboot/2))
+    
+    # regular x
     x_fit = sm.add_constant(x)
-    fit_results = sm.OLS(y, x_fit).fit()
+    indices = np.arange(len(x))
+    
+    # Run nboot iterations
+    boot_slope = np.array([np.nan] * nboot)
+    boot_intcp = np.array([np.nan] * nboot)
+    for i in range(nboot):
+        # randomly select indices with replacements
+        rdm_idx = choices(indices, k=len(x))
+        # Ordinary Linear Regresion
+        fit_results = sm.OLS(y[rdm_idx], x_fit[rdm_idx]).fit()
+        # Store slope and intercept
+        boot_slope[i] = fit_results.params[1]
+        boot_intcp[i] = fit_results.params[0]
 
-    return fit_results
+    # Sort and remove wings of the distribution
+    boot_slope = np.sort(boot_slope)
+    boot_intcp = np.sort(boot_intcp)
+    summary['mean_slope'] = np.round(np.mean(boot_slope), 3)
+    summary['mean_intcp'] = np.round(np.mean(boot_intcp), 3)
+    summary['median_slope'] = np.round(boot_slope[idxm], 3)
+    summary['median_intcp'] = np.round(boot_intcp[idxm], 3)
+    summary['slope_SE'] = np.round(np.std(boot_slope), 3)
+    summary['intcp_SE'] = np.round(np.std(boot_intcp), 3)
+    summary['slope_CI'] = np.round([boot_slope[idx1], boot_slope[idx2]], 3)
+    summary['intcp_CI'] = np.round([boot_intcp[idx1], boot_intcp[idx2]], 3)        
 
+    return summary
 
 ## Load climate index
 nlci = pd.read_csv('/home/cyrf0006/AZMP/state_reports/reporting_2023/operation_files/NL_climate_index.csv')
@@ -122,10 +148,10 @@ df_ncam.name = 'delta_groundfish_biomass_kt'
 df_ncam.index.name = 'Year'
 df_cod_catch.name = 'Cod_catches_kt'
 df_cod_catch.index.name = 'Year'
-CI = nlci.squeeze()
-CI.name = 'NLCI'
+NLCI = nlci.squeeze()
+NLCI.name = 'NLCI'
 
-df_data = pd.concat([CI, df_PP,df_cal_ab,df_cap3, df_bio_ave, df_ncam, df_cod_catch], axis=1)
+df_data = pd.concat([NLCI, df_PP,df_cal_ab,df_cap3, df_bio_ave, df_ncam, df_cod_catch], axis=1)
 df_data.sort_index(inplace=True)
 df_data.to_csv('ecosystem_data.csv', float_format='%.2f')
 
@@ -151,7 +177,7 @@ df_PP.plot( ax=ax2, color='Green', linewidth=3, alpha=.9, zorder=200)
 ax2.legend(['Net Primary Production'])
 plt.ylabel(r'PP ($\rm mgC\,m^{-3}\,d^{-1}$)', color='green')
 plt.title('Global ocean biogeochemistry hindcast')
-# add mean +- sd shade
+# add mean 
 PPmean = np.array(df_PP).mean()
 PPstd = np.array(df_PP).std()
 ax2.plot([df_PP.index[0], df_PP.index[-1]], [PPmean, PPmean], linestyle=':', color='green', linewidth=2, alpha=0.5)
@@ -159,16 +185,17 @@ ax2.plot([df_PP.index[0], df_PP.index[-1]], [PPmean, PPmean], linestyle=':', col
 for years in years_list:
     PP_tmp = df_PP[(df_PP.index>=years[0]) & (df_PP.index<=years[1])]
     if len(PP_tmp)>0:
-        ax2.plot([PP_tmp.index[0], PP_tmp.index[-1]], [PP_tmp.mean().values, PP_tmp.mean().values], linestyle='--', color='green', linewidth=2)
-        # add mean +- std shade
+        ax2.plot([PP_tmp.index[0], PP_tmp.index[-1]], [PP_tmp.mean(), PP_tmp.mean()], linestyle='--', color='green', linewidth=2)
+        # add mean +- CI shade
         PPmean = np.array(PP_tmp).mean().round(2)
         PPstd = np.array(PP_tmp).std().round(2)
-        ax2.fill_between([PP_tmp.index[0]-.5, PP_tmp.index[-1]+.5], [PPmean - PPstd/2], [PPmean + PPstd/2], facecolor='green', alpha=.3)
+        ax2.fill_between([PP_tmp.index[0]-.5, PP_tmp.index[-1]+.5], [PPmean - 1.28*PPstd/np.sqrt(len(PP_tmp))], [PPmean + 1.28*PPstd/np.sqrt(len(PP_tmp))], facecolor='green', alpha=.3)
         # print values
         yyyy = index.loc[(index>=years[0]) & (index<=years[1])]
         yyyy = [yyyy.index[0], yyyy.index[-1]]
-        print('PP ' + str(yyyy) + ':' + str(PPmean.round(2)) + ' +- ' +  str((PPstd/2).round(2)))
-        print('  -> ' + str((PP_tmp.mean().values - df_PP.mean().values).round(2)) + ' (' + str(((PP_tmp.mean().values - df_PP.mean().values)/df_PP.std().values).round(2)) + ')')
+        # 80% CI:
+        print('PP ' + str(yyyy) + ':' + str(PPmean.round(2)) + ' +- ' +  str((1.28*PPstd/np.sqrt(len(PP_tmp))).round(2)))
+        print('  -> ' + str((PP_tmp.mean() - df_PP.mean()).round(2)) + ' (' + str(((PP_tmp.mean() - df_PP.mean())/df_PP.std()).round(2)) + ')')
         print(' ')
 # Red/Green shades    
 for idx, years in enumerate(years_list):
@@ -202,7 +229,7 @@ ax2.legend(['Calfin'])
 plt.ylabel(r'$\rm log_{10}(ind\,m^{-2})$', color='tab:brown')
 plt.title('2J3KLNO Calanus finmarchicus density')
 ax2.set_ylim([8.5, 9.5])
-# add mean +- sd shade
+# add mean
 ZPmean = np.array(df_cal_ab).mean()
 ZPstd = np.array(df_cal_ab).std()
 ax2.plot([df_cal_ab.index[0], df_cal_ab.index[-1]], [ZPmean, ZPmean], linestyle=':', color='brown', linewidth=2, alpha=0.5)
@@ -211,14 +238,15 @@ for years in years_list:
     cal_tmp = df_cal_ab[(df_cal_ab.index>=years[0]) & (df_cal_ab.index<=years[1])]
     if len(cal_tmp)>0:
         ax2.plot([cal_tmp.index[0], cal_tmp.index[-1]], [cal_tmp.mean(), cal_tmp.mean()], linestyle='--', color='tab:brown', linewidth=2)
-        # add mean +- std shade
+        # add mean CI shade
         ZPmean = np.array(cal_tmp).mean()
         ZPstd = np.array(cal_tmp).std()
-        ax2.fill_between([cal_tmp.index[0]-.5, cal_tmp.index[-1]+.5], [ZPmean - ZPstd/2], [ZPmean + ZPstd/2], facecolor='tab:brown', alpha=.3)
+        ax2.fill_between([cal_tmp.index[0]-.5, cal_tmp.index[-1]+.5], [ZPmean - 1.28*ZPstd/np.sqrt(len(cal_tmp))], [ZPmean + 1.28*ZPstd/np.sqrt(len(cal_tmp))], facecolor='tab:brown', alpha=.3)
         # print values
         yyyy = index.loc[(index>=years[0]) & (index<=years[1])]
         yyyy = [yyyy.index[0], yyyy.index[-1]]
-        print('Calfin ' + str(yyyy) + ':' + str(ZPmean.round(2)) + ' +- ' +  str((ZPstd/2).round(2)))
+        # 80% CI:
+        print('Calfin ' + str(yyyy) + ':' + str(ZPmean.round(2)) + ' +- ' +  str((1.28*ZPstd/np.sqrt(len(cal_tmp))).round(2)))
         print('  -> ' + str(((cal_tmp.mean() - df_cal_ab.mean())).round(2)) + ' (' + str(((cal_tmp.mean() - df_cal_ab.mean())/df_cal_ab.std()).round(2)) + ')')
         print(' ')        
 # Red/Green shades    
@@ -259,14 +287,14 @@ for years in years_list[3:-1]:
     if len(bio_tmp)>0:
         x=bio_tmp.index
         y=bio_tmp.values
-        sn.regplot(x=x, y=y, color='red')
-        fit_results = simple_regplot(x, y)
+        summary = lreg_bootstrap(x, y, ci=CI)
+        sn.regplot(x=x, y=y, n_boot=1000, ci=80, color='red')
         # print values
         yyyy = index.loc[(index>=years[0]) & (index<=years[1])]
         yyyy = [yyyy.index[0], yyyy.index[-1]]
-        print('trawl ' + str(yyyy) + ':' + str(fit_results.params[1].round(2)) + ' +- ' + str(fit_results.bse[1].round(2)))
-        print('  -> [' + str((fit_results.params[1] - fit_results.bse[1]).round(2)) + ' , ' + str((fit_results.params[1] + fit_results.bse[1]).round(2)) + ']')
-        print('  -> conf. int.: ' + str((fit_results.conf_int())))
+        print('trawl ' + str(yyyy) + ':' + str(summary['mean_slope'].round(2)) + ' +- ' + str(summary['slope_SE'].round(2)))
+        print('  -> [' + str((summary['mean_slope'] - summary['slope_SE']).round(2)) + ' , ' + str((summary['mean_slope'] + summary['slope_SE']).round(2)) + ']')
+        print('  -> conf. int.: ' + str(summary['slope_CI']))
         print(' ')
 # Red/Green shades    
 for idx, years in enumerate(years_list):
@@ -306,15 +334,15 @@ for years in years_list:
     if len(cap_tmp)>1:
         x=cap_tmp.index
         y=cap_tmp.values
-        sn.regplot(x=x, y=y, color='tab:blue')
-        fit_results = simple_regplot(x, y)
-        # print values
+        summary = lreg_bootstrap(x, y, ci=CI)
+        sn.regplot(x=x, y=y, ci=90, color='tab:blue')
+         # print values
         yyyy = index.loc[(index>=years[0]) & (index<=years[1])]
         yyyy = [yyyy.index[0], yyyy.index[-1]]
-        print('capelin ' + str(yyyy) + ':' + str(fit_results.params[1].round(2)) + ' +- ' + str(fit_results.bse[1].round(2)))
-        print('  -> [' + str((fit_results.params[1] - fit_results.bse[1]).round(2)) + ' , ' + str((fit_results.params[1] + fit_results.bse[1]).round(2)) + ']')
-        print('  -> conf. int.: ' + str((fit_results.conf_int())))
-        print(' ')       
+        print('capelin ' + str(yyyy) + ':' + str(summary['mean_slope'].round(2)) + ' +- ' + str(summary['slope_SE'].round(2)))
+        print('  -> [' + str((summary['mean_slope'] - summary['slope_SE']).round(2)) + ' , ' + str((summary['mean_slope'] + summary['slope_SE']).round(2)) + ']')
+        print('  -> conf. int.: ' + str(summary['slope_CI']))
+        print(' ')
 # Red/Green shades    
 for idx, years in enumerate(years_list):
     c = ax.fill_between([years[0], years[1]], [NLCI_XLIMS[0], NLCI_XLIMS[0]], [NLCI_XLIMS[1], NLCI_XLIMS[1]], facecolor=years_colors[idx], alpha=.1)
@@ -347,20 +375,19 @@ df_ncam.plot(ax=ax2, color='tab:orange', linewidth=3, alpha=.9, zorder=200)
 ax2.legend(['Groundfish'])
 plt.ylabel(r'Excess biomass ($\rm kt$)', color='tab:orange')
 plt.title('Groundfish surplus production model')
-#ax2.set_ylim([0, 6000])
 for years in years_list[:-1]:
     gf_tmp = df_ncam[(df_ncam.index>=years[0]) & (df_ncam.index<=years[1])]
     if len(gf_tmp)>1:
         x=gf_tmp.index
         y=gf_tmp.values
-        sn.regplot(x=x, y=y, color='tab:orange')
-        fit_results = simple_regplot(x, y)
+        summary = lreg_bootstrap(x, y, ci=CI)
+        sn.regplot(x=x, y=y, ci=80, color='tab:orange')
         # print values
         yyyy = index.loc[(index>=years[0]) & (index<=years[1])]
         yyyy = [yyyy.index[0], yyyy.index[-1]]
-        print('groundfish ' + str(yyyy) + ':' + str(fit_results.params[1].round(2)) + ' +- ' + str(fit_results.bse[1].round(2)))
-        print('  -> [' + str((fit_results.params[1] - fit_results.bse[1]).round(2)) + ' , ' + str((fit_results.params[1] + fit_results.bse[1]).round(2)) + ']')
-        print('  -> conf. int.: ' + str((fit_results.conf_int())))
+        print('groundfish ' + str(yyyy) + ':' + str(summary['mean_slope'].round(2)) + ' +- ' + str(summary['slope_SE'].round(2)))
+        print('  -> [' + str((summary['mean_slope'] - summary['slope_SE']).round(2)) + ' , ' + str((summary['mean_slope'] + summary['slope_SE']).round(2)) + ']')
+        print('  -> conf. int.: ' + str(summary['slope_CI']))
         print(' ')
 # Red/Green shades    
 for idx, years in enumerate(years_list):
@@ -400,14 +427,14 @@ for years in years_list[:-1]:
     if len(gf_tmp)>1:
         x=gf_tmp.index
         y=gf_tmp.values
-        sn.regplot(x=x, y=y, color='darkgoldenrod')
-        fit_results = simple_regplot(x, y)
+        summary = lreg_bootstrap(x, y, ci=CI)
+        sn.regplot(x=x, y=y, ci=80, color='darkgoldenrod')
         # print values
         yyyy = index.loc[(index>=years[0]) & (index<=years[1])]
         yyyy = [yyyy.index[0], yyyy.index[-1]]
-        print('cod catches ' + str(yyyy) + ':' + str(fit_results.params[1].round(2)) + ' +- ' + str(fit_results.bse[1].round(2)))
-        print('  -> [' + str((fit_results.params[1] - fit_results.bse[1]).round(2)) + ' , ' + str((fit_results.params[1] + fit_results.bse[1]).round(2)) + ']')
-        print('  -> conf. int.: ' + str((fit_results.conf_int())))
+        print('cod catches ' + str(yyyy) + ':' + str(summary['mean_slope'].round(2)) + ' +- ' + str(summary['slope_SE'].round(2)))
+        print('  -> [' + str((summary['mean_slope'] - summary['slope_SE']).round(2)) + ' , ' + str((summary['mean_slope'] + summary['slope_SE']).round(2)) + ']')
+        print('  -> conf. int.: ' + str(summary['slope_CI']))
         print(' ')
 # Red/Green shades    
 for idx, years in enumerate(years_list):
@@ -442,3 +469,4 @@ for idx, years in enumerate(years_list):
     fig.savefig(fig_name, dpi=200)
     os.system('convert -trim -bordercolor White -border 10x10 ' + fig_name + ' ' + fig_name)
     c.remove()
+

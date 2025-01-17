@@ -6,9 +6,9 @@ Script to generate Figure 3 of the Climate fisheries paper
 data source: https://www.esrl.noaa.gov/psd/data/gridded/data.ncep.reanalysis.surface.html
 https://www.esrl.noaa.gov/psd/cgi-bin/db_search/DBListFiles.pl?did=195&tid=71800&vid=676
 
-This code is static and not updated since re-submission 1
+This code is static and not updated since re-submission 2
 Frederic.Cyr@mi.mun.ca
-2024-12-12
+2025-01-17
 '''
 
 
@@ -54,17 +54,45 @@ lon2 = 360-60.704367
 #v = np.arange(990, 1030) # SLP values
 v = np.arange(995, 1025) # SLP values
 
-## Define statistical model
-def simple_regplot(
-    x, y, n_std=2, n_pts=100, ax=None, scatter_kws=None, line_kws=None, ci_kws=None
-):
-    """ Draw a regression line with error interval. """
-    ax = plt.gca() if ax is None else ax
+# Define a bootstrap model for linear regression
+def lreg_bootstrap(x, y, nboot=1000, ci=95):
+    # initialize empty dict
+    summary = {}
 
-    # calculate best-fit line and interval
+    # find index of CI bounds
+    idx1 = int(np.round(nboot*((100-ci)/2)/100))
+    idx2 = int(np.round(nboot*(100-(100-ci)/2)/100))
+    idxm = int(np.round(nboot/2))
+    
+    # regular x
     x_fit = sm.add_constant(x)
-    fit_results = sm.OLS(y, x_fit).fit()
-    return fit_results
+    indices = np.arange(len(x))
+    
+    # Run nboot iterations
+    boot_slope = np.array([np.nan] * nboot)
+    boot_intcp = np.array([np.nan] * nboot)
+    for i in range(nboot):
+        # randomly select indices with replacements
+        rdm_idx = choices(indices, k=len(x))
+        # Ordinary Linear Regresion
+        fit_results = sm.OLS(y[rdm_idx], x_fit[rdm_idx]).fit()
+        # Store slope and intercept
+        boot_slope[i] = fit_results.params[1]
+        boot_intcp[i] = fit_results.params[0]
+
+    # Sort and remove wings of the distribution
+    boot_slope = np.sort(boot_slope)
+    boot_intcp = np.sort(boot_intcp)
+    summary['mean_slope'] = np.round(np.mean(boot_slope), 3)
+    summary['mean_intcp'] = np.round(np.mean(boot_intcp), 3)
+    summary['median_slope'] = np.round(boot_slope[idxm], 3)
+    summary['median_intcp'] = np.round(boot_intcp[idxm], 3)
+    summary['slope_SE'] = np.round(np.std(boot_slope), 3)
+    summary['intcp_SE'] = np.round(np.std(boot_intcp), 3)
+    summary['slope_CI'] = np.round([boot_slope[idx1], boot_slope[idx2]], 3)
+    summary['intcp_CI'] = np.round([boot_intcp[idx1], boot_intcp[idx2]], 3)        
+
+    return summary
 
 # Load SLP data from NOAA ESRL
 ds = xr.open_dataset('slp.mon.mean.nc')
@@ -124,9 +152,9 @@ for years in years_list:
     ## Trends Cod (Regular's process error)
     df_tmp2 = df_ncam[(df_ncam.index>=years[0]) & (df_ncam.index<=years[1])].dropna()
     if (len(df_tmp2)>0) & (years[0]>1975):
-        # new trend calculation (2024):
-        fit_results = simple_regplot(df_tmp2.index, df_tmp2.values)
-        trend = fit_results.params[1].round(2)
+        # new trend calculation (2025):
+        summary = lreg_bootstrap(df_tmp2.index, df_tmp2.values, ci=CI)
+        trend = summary['mean_slope'].round(2)
         if trend>0:
             plt.annotate('+' + "{:.0f}".format(np.abs(trend)) + r'$\rm \,kt\,yr^{-1}$', xy=(.985, 0.015), xycoords='axes fraction', color='g', fontsize=20, fontweight='bold', horizontalalignment='right', verticalalignment='bottom', backgroundcolor="w", zorder=100)
         elif trend<0:
@@ -135,9 +163,9 @@ for years in years_list:
    ## Trends biomass density (Mariano)
     df_tmp4 = df_bio_ave[(df_bio_ave.index>=years[0]) & (df_bio_ave.index<=years[1])].dropna()
     if len(df_tmp4)>2:
-        # new trend calculation (2024):
-        fit_results = simple_regplot(df_tmp4.index, df_tmp4.values)
-        trend = fit_results.params[1].round(2)
+        # new trend calculation (2025):
+        summary = lreg_bootstrap(df_tmp4.index, df_tmp4.values, ci=CI)
+        trend = summary['mean_slope'].round(2)
         if trend>0:
             plt.annotate('+' + "{:.1f}".format(np.abs(trend)) + r'$\rm \,t\,km^{-2}\,yr^{-1}$', xy=(.985, .10), xycoords='axes fraction', color='g', fontsize=20, fontweight='bold', horizontalalignment='right', verticalalignment='bottom', backgroundcolor="w", zorder=100)
         elif trend<0:
@@ -146,9 +174,9 @@ for years in years_list:
     ## Trends Capelin (New 2022 index)
     df_tmp = df_cap3[(df_cap3.index>=years[0]) & (df_cap3.index<=years[1])].dropna()
     if len(df_tmp)>0:
-        # new trend calculation (2024):
-        fit_results = simple_regplot(df_tmp.index, df_tmp.values)
-        trend = fit_results.params[1].round(2)
+        # new trend calculation (2025):
+        summary = lreg_bootstrap(df_tmp.index, df_tmp.values, ci=CI)
+        trend = summary['mean_slope'].round(2)
         if (years[0]==1999) | (years[0]==2007):
             plt.annotate('+' + "{:.0f}".format(np.abs(trend)) + r'$\rm \,kt\,yr^{-1}$', xy=(.985, .19), xycoords='axes fraction', color='gray', fontsize=20, fontweight='bold', horizontalalignment='right', verticalalignment='bottom', backgroundcolor="w", zorder=100)            
         elif trend>0:
