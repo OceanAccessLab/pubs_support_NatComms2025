@@ -6,7 +6,7 @@ Each
 It contains the following columns:
 
 1. "Year" (index)
-Years from 1976 to 2022 
+Years from 1950 to 2023 
 
 2. "NLCI"
 Newfoundland and Labrador Climate Index (NLCI) from Cyr, F. and Galbraith, P. S.: A climate index for the Newfoundland and Labrador shelf, Earth Syst. Sci. Data, 13, 1807–1828, https://doi.org/10.5194/essd-13-1807-2021, 2021.
@@ -15,7 +15,7 @@ This data series is accessible here: https://doi.org/10.20383/101.0301
 3. "primary_prod_mgC_m-3_d-1"
 Annual net primary production (in mgC m−3 d−1) over the NW Atlantic was obtained from a Mercator-Ocean biogeochemistry hindcast for the global ocean at https://doi.org/10.48670/moi-00019 [consulted 4 October 2022].
 The monthly resolution data were averaged in annual means and over a geographical region covering the NW Atlantic [47-65°N; 47-65°W] (dashed box in Figure 3).
-The resulting time series runs from 1993 to 2020 (Figure S1).
+The resulting time series runs from 1993 to 2023 (Figure S1).
 
 4. "calfin_density_log10_ind_m-2"
 Mean annual density of Calanus finmarchicus on the Newfoundland and Labrador shelf (in log10 of individuals per square meters).
@@ -25,7 +25,7 @@ The resulting time series runs from 1999 to 2021 (Figure S2).
 5. "capelin_biomass_index_kt"
 Anual capelin biomass index (in kt) derived from the  annual Fisheries and Oceans Canada (DFO) spring acoustic surveys..
 The spring capelin acoustic survey has taken place annually in its current form since 1982.
-The resulting time series runs from 1982 to 2022 (Figure S3).
+The resulting time series runs from 1982 to 2023 (Figure S3).
 
 6. "multispecies_biomass_density_kt_km-2"
 The total biomass density index from Fisheries and Oceans Canada (DFO) multi-species bottom-trawl scientific surveys (in kt km−2).
